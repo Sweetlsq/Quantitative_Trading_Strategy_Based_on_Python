@@ -61,4 +61,5 @@ if __name__ == '__main__':
     index_codes = ['000001', '000300', '399001', '399005', '399006', '000905']
     # 连接MongoDB数据库
     collection = MongoClient('mongodb://127.0.0.1:27017')['quant']['daily']
-    index = crawl_index(start_date, end_date, index_codes)
+    # get_k_data获取指数行情数据时有bug，起始日期会晚一年
+    index = crawl_index("20120101", end_date, index_codes)
