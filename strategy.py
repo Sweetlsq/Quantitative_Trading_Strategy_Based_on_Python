@@ -4,6 +4,10 @@ import matplotlib.pyplot as plt
 import time
 import datetime
 import pandas_market_calendars as mcal
+from tqdm import tqdm
+import numpy as np
+import pyecharts.options as opts
+from pyecharts.charts import Line
 
 # collection.create_index([("code", 1)])
 # collection.create_index([("trade_date", ASCENDING), ("pe", ASCENDING)])
@@ -30,18 +34,6 @@ def get_stocks_pool(start_date, end_date):
     :param end_date: 结束日期
     :return: tuple，所有调整日，以及调整日和代码列表对应的dict
     """
-
-    """
-    下面的几个参数可以自己修改
-    """
-    # 调整周期是7个交易日，可以改变的参数
-    adjust_interval = 22
-    # PE的范围
-    pe_range = (0, 10)
-    # PE的排序方式， ASCENDING - 从小到大，DESCENDING - 从大到小
-    sort = ASCENDING
-    # 股票池内的股票数量
-    pool_size = 5
 
     # 返回值：所有的调整日列表
     all_adjust_dates = []
@@ -157,7 +149,7 @@ def statistic_stock_pool(start_date, end_date):
     # 设定初始净值为1
     net_value = 1
     # 在所有调整日上统计收益，循环时从1开始，因为每次计算要用到当期和上期
-    for _index in range(1, len(adjust_dates) - 1):
+    for _index in tqdm(range(1, len(adjust_dates) - 1)):
         # 上一期的调整日
         last_adjust_date = adjust_dates[_index - 1]
         # 当期的调整日
@@ -190,42 +182,131 @@ def statistic_stock_pool(start_date, end_date):
             # 股票代码
             code = sell_daily['code']
 
-            # 如果该股票存在股票池开始时的收盘价，则参与收益统计
-            if code in code_buy_close_dict:
-                # 选入股票池时的价格
-                buy_close = code_buy_close_dict[code]
-                # 当前的价格
-                sell_close = sell_daily['close']
-                # 累加所有股票的收益
-                profit_sum += (sell_close - buy_close) / buy_close
+            # 选入股票池时的价格
+            buy_close = code_buy_close_dict[code]
+            # 当前的价格
+            sell_close = sell_daily['close']
+            # 累加所有股票的收益
+            profit_sum += (sell_close - buy_close) / buy_close
 
-                # 参与收益计算的股票数加1
-                count += 1
+            # 参与收益计算的股票数加1
+            count += 1
 
-        # 如果股票数量大于0，才统计当期收益
-        if count > 0:
-            # 计算平均收益
-            profit = round(profit_sum / count, 4)
+        # 计算平均收益
+        profit = round(profit_sum / count, 4)
 
-            # 当前沪深300的值
-            hs300_close = collection.find_one({'trade_date': current_adjust_date, 'code': '000300'})['close']
+        # 当前沪深300的值
+        hs300_close = collection.find_one({'trade_date': current_adjust_date, 'code': '000300'})['close']
 
-            # 计算净值和累积收益，放到DataFrame中
-            net_value = net_value * (1 + profit)
-            df_profit.loc[current_adjust_date] = {
-                # 乘以100，改为百分比
-                'profit': round((net_value - 1) * 100, 4),
-                # 乘以100，改为百分比
-                'hs300': round((hs300_close - hs300_begin_value) * 100 / hs300_begin_value, 4)}
+        # 计算净值和累积收益，放到DataFrame中
+        net_value = net_value * (1 + profit)
+        df_profit.loc[current_adjust_date] = {
+            # 乘以100，改为百分比
+            'profit': round((net_value - 1) * 100, 4),
+            # 乘以100，改为百分比
+            'hs300': round((hs300_close - hs300_begin_value) * 100 / hs300_begin_value, 4)}
 
-    # 绘制曲线
-    df_profit.plot(title='Stock Pool Evaluation Result', kind='line')
-    # 显示图像
-    plt.show()
+    # 只显示6个横坐标
+    n_segments = 5
+    segments = np.array_split(df_profit.index.values, n_segments)
+    # print(len(segments))
+    indices = [s[0] for s in segments]
+    indices.append(segments[n_segments - 1][-1])
+
+    # 设置副标题
+    subtitle = f'{pe_range[0]}<pe<{pe_range[1]}\nstock_number:5'
+
+    # 创建图表对象并设置图表基础属性
+    c = (
+        Line(
+            # 添加图表基础设置
+            init_opts=opts.InitOpts(
+                width="1500px",
+                height="600px",
+                page_title='Historical Yield',
+                bg_color='white'
+            )
+        )
+        # 添加横坐标数据
+        .add_xaxis(df_profit.index.values)
+        # 添加第一个纵坐标数据系列，名称为 "hs300"
+        .add_yaxis(
+            "hs300", # 数据系列的名称
+            df_profit['hs300'], # 数据值
+            symbol='circle', # 设置标记符号为圆
+            symbol_size=4, # 设置标记大小为4
+            label_opts=opts.LabelOpts(is_show=False), # 不显示标签（不在整张图表上显示数值）
+            itemstyle_opts=opts.ItemStyleOpts(
+                color='black',  # 设置数据项颜色为黑色
+            ),
+
+        )
+        # 添加第二个纵坐标数据系列，名称为 "profit"
+        .add_yaxis(
+            "profit",
+            df_profit['profit'], # 数据值
+            symbol='circle', # 设置标记符号为圆
+            symbol_size=4, # 设置标记大小为4
+            label_opts=opts.LabelOpts(is_show=False), # 不显示标签（不在整张图表上显示数值）
+            itemstyle_opts=opts.ItemStyleOpts(
+               color='red',  # 设置数据项颜色为红色
+            ),
+        )
+        # 设置图表全局属性
+        .set_global_opts(
+            # 标题配置项
+            title_opts=opts.TitleOpts(
+                title="Historical Yield", # 设置标题
+                subtitle=subtitle, # 设置副标题
+            ),
+            # 区域缩放选项
+            datazoom_opts=opts.DataZoomOpts(
+                is_show=True, # 显示区域缩放
+                type_='slider', # 设置区域缩放形式为滑动条
+                is_realtime=True, # 支持实时缩放
+                range_start=0, # 区域缩放的起始值
+                range_end=100, # 区域缩放的结束值
+                orient="horizontal", # 设置方向为水平方向
+                is_zoom_lock=False, # 支持同时缩放
+            ),
+            # 提示框配置项
+            tooltip_opts=opts.TooltipOpts(
+                is_show=True, # 显示提示框
+                trigger="axis", # 设置触发方式为坐标轴触发
+                trigger_on='mousemove|click', # 设置触发方式为鼠标移动和点击触发
+                is_show_content=True, # 显示提示框内容
+            ),
+            # 横坐标配置项
+            xaxis_opts=opts.AxisOpts(
+                is_show=True, # 显示横坐标
+                type_="time" # 设置坐标轴类型为时间类型
+            ),
+            # 纵坐标配置项
+            yaxis_opts=opts.AxisOpts(
+                is_show=True, # 显示纵坐标
+                axisline_opts=opts.AxisLineOpts(is_show=True), # 显示坐标轴线条
+                axistick_opts=opts.AxisTickOpts(is_show=True), # 显示坐标轴刻度线
+            ),
+        )
+        .render("Historical Yield.html")
+)
+
 
 if __name__ == '__main__':
     # 创建一个MongoClient对象并连接到本地MongoDB的quant数据库的daily集合
     collection = MongoClient('mongodb://127.0.0.1:27017')['quant']['daily']
+    """
+    下面的几个参数可以自己修改
+    """
     start_date = "20130101"
     end_date = '20221231'
+    # 调整周期是7个交易日，可以改变的参数
+    adjust_interval = 22
+    # PE的范围
+    pe_range = (0, 10)
+    # PE的排序方式， ASCENDING - 从小到大，DESCENDING - 从大到小
+    sort = ASCENDING
+    # 股票池内的股票数量
+    pool_size = 5
+
     statistic_stock_pool(start_date, end_date)
