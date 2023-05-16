@@ -9,22 +9,18 @@ import numpy as np
 import pyecharts.options as opts
 from pyecharts.charts import Line
 
+
+# 创建索引，加快查找速度
 # collection.create_index([("code", 1)])
 # collection.create_index([("trade_date", ASCENDING), ("pe", ASCENDING)])
 # collection.create_index([("trade_date", ASCENDING), ('code', ASCENDING), ("volume", ASCENDING)])
+
+
 # start_time = time.time()    # 记录开始时间
 # print("timing....")
 # end_time = time.time()      # 记录结束时间
 # print('Elapsed time: {:.6f}s'.format(end_time - start_time))    # 输出耗时
 # count = collection.count_documents({'code': '000004'})
-#
-# with open("stock.txt", "r") as file:
-#     all_stocks = file.read().splitlines()
-#
-# sum = 0
-# for i in all_stocks:
-#     sum += collection.count_documents({'code': i})
-# print(sum)
 
 def get_stocks_pool(start_date, end_date):
     """
@@ -107,20 +103,6 @@ def get_stocks_pool(start_date, end_date):
     # 返回结果
     return all_adjust_dates, adjust_date_codes_dict
 
-def find_out_stocks(last_phase_codes, this_phase_codes):
-    """
-    找到上期入选本期被调出的股票，这些股票将必须卖出
-    :param last_phase_codes: 上期的股票列表
-    :param this_phase_codes: 本期的股票列表
-    :return: 被调出的股票列表
-    """
-    out_stocks = []
-
-    for code in last_phase_codes:
-        if code not in this_phase_codes:
-            out_stocks.append(code)
-
-    return out_stocks
 
 def statistic_stock_pool(start_date, end_date):
     """
@@ -137,7 +119,7 @@ def statistic_stock_pool(start_date, end_date):
     df_profit.loc[adjust_dates[0]] = {'profit': 0, 'hs300': 0}
 
     # 找到沪深300第一天的值，后面的累计涨跌幅都是和它比较
-    hs300_begin_value = collection.find_one({ 'trade_date': adjust_dates[0], 'code': '000300'})['close']
+    hs300_begin_value = collection.find_one({'trade_date': adjust_dates[0], 'code': '000300'})['close']
 
     """
     通过净值的方式计算累计收益：
@@ -149,6 +131,7 @@ def statistic_stock_pool(start_date, end_date):
     # 设定初始净值为1
     net_value = 1
     # 在所有调整日上统计收益，循环时从1开始，因为每次计算要用到当期和上期
+
     for _index in tqdm(range(1, len(adjust_dates) - 1)):
         # 上一期的调整日
         last_adjust_date = adjust_dates[_index - 1]
@@ -206,15 +189,15 @@ def statistic_stock_pool(start_date, end_date):
             # 乘以100，改为百分比
             'hs300': round((hs300_close - hs300_begin_value) * 100 / hs300_begin_value, 4)}
 
-    # 只显示6个横坐标
-    n_segments = 5
-    segments = np.array_split(df_profit.index.values, n_segments)
-    # print(len(segments))
-    indices = [s[0] for s in segments]
-    indices.append(segments[n_segments - 1][-1])
+    """
+    用pyecharts画出策略最终收益曲线
+    """
 
     # 设置副标题
-    subtitle = f'{pe_range[0]}<pe<{pe_range[1]}\nstock_number:5'
+    fuhao = ''
+    subtitle = f'{pe_range[0]}<pe<{pe_range[1]}\n' \
+               f'stock_number:5\n' \
+               f'年化收益率：{(pow(net_value, 1 / (int(end_date[:4]) - int(start_date[:4]) + 1)) - 1) * 100:.2f}%\n'
 
     # 创建图表对象并设置图表基础属性
     c = (
@@ -227,70 +210,76 @@ def statistic_stock_pool(start_date, end_date):
                 bg_color='white'
             )
         )
-        # 添加横坐标数据
-        .add_xaxis(df_profit.index.values)
-        # 添加第一个纵坐标数据系列，名称为 "hs300"
-        .add_yaxis(
-            "hs300", # 数据系列的名称
-            df_profit['hs300'], # 数据值
-            symbol='circle', # 设置标记符号为圆
-            symbol_size=4, # 设置标记大小为4
-            label_opts=opts.LabelOpts(is_show=False), # 不显示标签（不在整张图表上显示数值）
+            # 添加横坐标数据
+            .add_xaxis(df_profit.index.values)
+            # 添加第一个纵坐标数据系列，名称为 "hs300"
+            .add_yaxis(
+            "hs300",  # 数据系列的名称
+            df_profit['hs300'],  # 数据值
+            symbol='circle',  # 设置标记符号为圆
+            symbol_size=4,  # 设置标记大小为4
+            label_opts=opts.LabelOpts(is_show=False),  # 不显示标签（不在整张图表上显示数值）
             itemstyle_opts=opts.ItemStyleOpts(
                 color='black',  # 设置数据项颜色为黑色
             ),
 
         )
-        # 添加第二个纵坐标数据系列，名称为 "profit"
-        .add_yaxis(
+            # 添加第二个纵坐标数据系列，名称为 "profit"
+            .add_yaxis(
             "profit",
-            df_profit['profit'], # 数据值
-            symbol='circle', # 设置标记符号为圆
-            symbol_size=4, # 设置标记大小为4
-            label_opts=opts.LabelOpts(is_show=False), # 不显示标签（不在整张图表上显示数值）
+            df_profit['profit'],  # 数据值
+            symbol='circle',  # 设置标记符号为圆
+            symbol_size=4,  # 设置标记大小为4
+            label_opts=opts.LabelOpts(is_show=False),  # 不显示标签（不在整张图表上显示数值）
             itemstyle_opts=opts.ItemStyleOpts(
-               color='red',  # 设置数据项颜色为红色
+                color='red',  # 设置数据项颜色为红色
             ),
         )
-        # 设置图表全局属性
-        .set_global_opts(
+            # 设置图表全局属性
+            .set_global_opts(
             # 标题配置项
             title_opts=opts.TitleOpts(
-                title="Historical Yield", # 设置标题
-                subtitle=subtitle, # 设置副标题
+                title="Historical Yield",  # 设置标题
+                subtitle=subtitle,  # 设置副标题
             ),
             # 区域缩放选项
-            datazoom_opts=opts.DataZoomOpts(
-                is_show=True, # 显示区域缩放
-                type_='slider', # 设置区域缩放形式为滑动条
-                is_realtime=True, # 支持实时缩放
-                range_start=0, # 区域缩放的起始值
-                range_end=100, # 区域缩放的结束值
-                orient="horizontal", # 设置方向为水平方向
-                is_zoom_lock=False, # 支持同时缩放
-            ),
+            # datazoom_opts=opts.DataZoomOpts(
+            #     is_show=True,  # 显示区域缩放
+            #     type_='slider',  # 设置区域缩放形式为滑动条
+            #     is_realtime=True,  # 支持实时缩放
+            #     # range_start=0,  # 区域缩放的起始值
+            #     # range_end=100,  # 区域缩放的结束值
+            #     orient="horizontal",  # 设置方向为水平方向
+            #     is_zoom_lock=False,  # 支持同时缩放
+            #     start_value=datetime.datetime.strptime(df_profit.index.values[0], '%Y-%m-%d'),  # 设置数据缩放组件的起始时间
+            #     end_value=datetime.datetime.strptime(df_profit.index.values[-1], '%Y-%m-%d')  # 设置数据缩放组件的结束时间
+            # ),
             # 提示框配置项
             tooltip_opts=opts.TooltipOpts(
-                is_show=True, # 显示提示框
-                trigger="axis", # 设置触发方式为坐标轴触发
-                trigger_on='mousemove|click', # 设置触发方式为鼠标移动和点击触发
-                is_show_content=True, # 显示提示框内容
+                is_show=True,  # 显示提示框
+                trigger="axis",  # 设置触发方式为坐标轴触发
+                trigger_on='mousemove|click',  # 设置触发方式为鼠标移动和点击触发
+                is_show_content=True,  # 显示提示框内容
             ),
             # 横坐标配置项
             xaxis_opts=opts.AxisOpts(
-                is_show=True, # 显示横坐标
-                type_="time" # 设置坐标轴类型为时间类型
+                is_show=True,  # 显示横坐标
+                type_="time",  # 设置坐标轴类型为时间类型
+                # min_= datetime.datetime.strptime(start_date, '%Y%m%d'),  # 设置 x 轴的最小值
             ),
             # 纵坐标配置项
             yaxis_opts=opts.AxisOpts(
-                is_show=True, # 显示纵坐标
-                axisline_opts=opts.AxisLineOpts(is_show=True), # 显示坐标轴线条
-                axistick_opts=opts.AxisTickOpts(is_show=True), # 显示坐标轴刻度线
+                is_show=True,  # 显示纵坐标
+                axisline_opts=opts.AxisLineOpts(is_show=True),  # 显示坐标轴线条
+                axistick_opts=opts.AxisTickOpts(is_show=True),  # 显示坐标轴刻度线
             ),
         )
-        .render("Historical Yield.html")
-)
-
+            .render("Historical Yield.html")
+    )
+    # print(df_profit.index.values[0])
+    # print(df_profit.index.values[-1])
+    # print(type(df_profit.index.values[0]))
+    # print(df_profit.index.values)
 
 if __name__ == '__main__':
     # 创建一个MongoClient对象并连接到本地MongoDB的quant数据库的daily集合
@@ -300,9 +289,9 @@ if __name__ == '__main__':
     """
     start_date = "20130101"
     end_date = '20221231'
-    # 调整周期是7个交易日，可以改变的参数
+    # 调整周期是22个交易日，可以改变的参数
     adjust_interval = 22
-    # PE的范围
+    # 设定PE的范围
     pe_range = (0, 10)
     # PE的排序方式， ASCENDING - 从小到大，DESCENDING - 从大到小
     sort = ASCENDING
@@ -310,3 +299,4 @@ if __name__ == '__main__':
     pool_size = 5
 
     statistic_stock_pool(start_date, end_date)
+
